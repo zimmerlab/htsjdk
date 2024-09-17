@@ -178,6 +178,15 @@ public class SAMRecord implements HtsRecord, Cloneable, Locatable, Serializable 
      */
     public static final List<String> TAGS_TO_REVERSE = Arrays.asList(SAMTag.OQ.name(), SAMTag.U2.name());
 
+    // Custom field to allow linking to a database record
+    private long dbId;
+    public long getDbId() {
+        return dbId;
+    }
+    public void setDbId(long dbId) {
+        this.dbId = dbId;
+    }
+
     private String mReadName = null;
     private byte[] mReadBases = NULL_SEQUENCE;
     private byte[] mBaseQualities = NULL_QUALS;
