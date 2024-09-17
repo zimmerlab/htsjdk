@@ -815,8 +815,9 @@ public class BAMFileReader extends SamReader.ReaderImplementation {
      * Iterator for non-indexed sequential iteration through all SAMRecords in file.
      * Starting point of iteration is wherever current file position is when the iterator is constructed.
      */
-    private class BAMFileIterator extends AbstractBamIterator {
+    public class BAMFileIterator extends AbstractBamIterator {
         private SAMRecord mNextRecord = null;
+        private long mNextRecordFilePosition;
         private final BAMRecordCodec bamRecordCodec;
         private long samRecordIndex = 0; // Records at what position (counted in records) we are at in the file
 
@@ -828,6 +829,11 @@ public class BAMFileReader extends SamReader.ReaderImplementation {
          * @param advance Trick to enable subclass to do more setup before advancing
          */
         BAMFileIterator(final boolean advance) {
+
+            this.mNextRecord = null;
+            this.mNextRecordFilePosition = -1L;
+            this.samRecordIndex = 0L;
+
             this.bamRecordCodec = new BAMRecordCodec(getFileHeader(), samRecordFactory);
             this.bamRecordCodec.setInputStream(BAMFileReader.this.mStream.getInputStream(),
                     BAMFileReader.this.mStream.getInputFileName());
@@ -849,6 +855,10 @@ public class BAMFileReader extends SamReader.ReaderImplementation {
             final SAMRecord result = mNextRecord;
             advance();
             return result;
+        }
+
+        public long getNextRecordFilePosition() {
+            return this.mNextRecordFilePosition;
         }
 
         void advance() {
@@ -877,8 +887,9 @@ public class BAMFileReader extends SamReader.ReaderImplementation {
         /**
          * Read the next record from the input stream.
          */
-        SAMRecord getNextRecord() throws IOException {
+        public SAMRecord getNextRecord() throws IOException {
             final long startCoordinate = mCompressedInputStream.getFilePointer();
+            this.mNextRecordFilePosition = startCoordinate;
             final SAMRecord next = bamRecordCodec.decode();
             final long stopCoordinate = mCompressedInputStream.getFilePointer();
 
@@ -886,6 +897,10 @@ public class BAMFileReader extends SamReader.ReaderImplementation {
                 next.setFileSource(new SAMFileSource(mReader,new BAMFileSpan(new Chunk(startCoordinate,stopCoordinate))));
 
             return next;
+        }
+
+        public long getRecordIndex() {
+            return this.samRecordIndex;
         }
 
         /**
@@ -984,6 +999,10 @@ public class BAMFileReader extends SamReader.ReaderImplementation {
         return mCompressedInputStream.getFilePointer();
     }
 
+    public void seek(long pos) throws IOException {
+        this.mCompressedInputStream.seek(pos);
+    }
+
     /**
      * Iterate over the SAMRecords defined by the sections of the file described in the ctor argument.
      */
@@ -1004,7 +1023,7 @@ public class BAMFileReader extends SamReader.ReaderImplementation {
         }
 
         @Override
-        SAMRecord getNextRecord()
+        public SAMRecord getNextRecord()
             throws IOException {
             // Advance to next file block if necessary
             while (mCompressedInputStream.getFilePointer() >= mFilePointerLimit) {
