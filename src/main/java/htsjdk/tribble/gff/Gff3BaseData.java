@@ -41,7 +41,7 @@ public class Gff3BaseData {
         this.hashCode = computeHashCode();
     }
 
-    private static Map<String, List<String>> copyAttributesSafely(final Map<String, List<String>> attributes) {
+    public static Map<String, List<String>> copyAttributesSafely(final Map<String, List<String>> attributes) {
         final Map<String, List<String>> modifiableDeepMap = new LinkedHashMap<>();
 
         for (final Map.Entry<String, List<String>> entry : attributes.entrySet()) {
