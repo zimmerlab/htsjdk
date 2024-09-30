@@ -58,7 +58,7 @@ final gitVersion = gitVersion().replaceAll(".dirty", "")
 version = isRelease ? gitVersion : gitVersion + "-SNAPSHOT"
 
 logger.info("build for version:" + version)
-group = 'com.github.samtools'
+group = 'com.github.zimmerlab'
 
 defaultTasks 'jar'
 
@@ -74,7 +74,7 @@ tasks.withType(Javadoc).configureEach {
 jar {
     manifest {
         attributes 'Implementation-Title': 'HTSJDK',
-                'Implementation-Vendor': 'Samtools Organization',
+                'Implementation-Vendor': 'Zimmerlab',
                 'Implementation-Version': archiveVersion
     }
 }
@@ -230,13 +230,12 @@ publishing {
 
     repositories {
         maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/zimmerlab/htsjdk")
             credentials {
-                username = isRelease ? project.findProperty("sonatypeUsername") : System.env.ARTIFACTORY_USERNAME
-                password = isRelease ? project.findProperty("sonatypePassword") : System.env.ARTIFACTORY_PASSWORD
+                username = project.findProperty("gpr.user") ?: System.getenv("USERNAME")
+                password = project.findProperty("gpr.token") ?: System.getenv("TOKEN")
             }
-            def release = "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
-            def snapshot = "https://broadinstitute.jfrog.io/broadinstitute/libs-snapshot-local/"
-            url = isRelease ? release : snapshot
         }
     }
 }
