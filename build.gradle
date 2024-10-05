@@ -58,6 +58,7 @@ final gitVersion = gitVersion().replaceAll(".dirty", "")
 version = isRelease ? gitVersion : gitVersion + "-SNAPSHOT"
 
 logger.info("build for version:" + version)
+
 group = 'com.github.zimmerlab'
 
 defaultTasks 'jar'
@@ -198,32 +199,14 @@ publishing {
         htsjdk(MavenPublication) {
             from components.java
 
+            groupId 'com.github.zimmerlab'
+            artifactId 'htsjdk'
+
             pom {
                 name = 'HTSJDK'
                 packaging = 'jar'
                 description = 'A Java API for high-throughput sequencing data (HTS) formats'
                 url = 'https://samtools.github.io/htsjdk/'
-
-                developers {
-                    developer {
-                        id = 'htsjdk'
-                        name = 'Htsjdk Team'
-                        url = 'https://github.com/samtools/htsjdk'
-                    }
-                }
-
-                scm {
-                    url = 'git@github.com:samtools/htsjdk.git'
-                    connection = 'scm:git:git@github.com:samtools/htsjdk.git'
-                }
-
-                licenses {
-                    license {
-                        name = 'MIT License'
-                        url = 'http://opensource.org/licenses/MIT'
-                        distribution = 'repo'
-                    }
-                }
             }
         }
     }

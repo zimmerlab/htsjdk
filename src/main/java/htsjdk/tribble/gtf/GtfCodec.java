@@ -43,6 +43,9 @@ public class GtfCodec extends AbstractFeatureCodec<GtfFeature, LineIterator> {
         put("stop_codon", 2);
         put("five_prime_utr", 2);
         put("three_prime_utr", 2);
+        put("utr", 2);
+        put("5'utr", 2);
+        put("3'utr", 2);
         put("selenocysteine", 2);
     }};
 
