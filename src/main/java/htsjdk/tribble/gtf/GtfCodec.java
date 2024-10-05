@@ -34,23 +34,13 @@ public class GtfCodec extends AbstractFeatureCodec<GtfFeature, LineIterator> {
     private static final int FRAME_INDEX = 7;
     private static final int ATTRIBUTES_INDEX = 8;
 
-    private static final Map<String, Integer> typeHierarchy = new HashMap<>() {{
-        put("gene", 0);
-        put("transcript", 1);
-        put("exon", 2);
-        put("cds", 2);
-        put("start_codon", 2);
-        put("stop_codon", 2);
-        put("five_prime_utr", 2);
-        put("three_prime_utr", 2);
-        put("utr", 2);
-        put("5'utr", 2);
-        put("3'utr", 2);
-        put("selenocysteine", 2);
-    }};
-
     private final Queue<GtfFeatureImpl> activeFeatures = new ArrayDeque<>();
     private final Queue<GtfFeatureImpl> featuresToFlush = new ArrayDeque<>();
+
+    private GtfFeatureImpl geneFeature;
+    private boolean geneFeatureArtificial = false;
+    private GtfFeatureImpl transcriptFeature;
+    private boolean transcriptFeatureArtificial = false;
     private GtfFeatureImpl lastFeature;
 
     private final DecodeDepth decodeDepth;
@@ -105,69 +95,197 @@ public class GtfCodec extends AbstractFeatureCodec<GtfFeature, LineIterator> {
         }
 
         final GtfFeatureImpl thisFeature = new GtfFeatureImpl(parseLine(line, currentLine, this.filterOutAttribute));
-        activeFeatures.add(thisFeature);
 
         if (decodeDepth == DecodeDepth.DEEP) {
             // link to parents / children / co-features
 
-            if (lastFeature == null) {
-                // the first feature to be encountered
-                lastFeature = thisFeature;
-            } else {
-                final int level = typeHierarchy.getOrDefault(thisFeature.getType().toLowerCase(), -1);
-                final int lastLevel = typeHierarchy.getOrDefault(lastFeature.getType().toLowerCase(), -1);
+            if (thisFeature.getType().equalsIgnoreCase("gene")) {
+                // encountered a new gene, flush the previous gene
+                prepareToFlushFeatures();
 
-                if (level < 0) {
-                    throw new TribbleException(String.format("Unknown level for feature type: %s", thisFeature.getType()));
-                }
+                activeFeatures.add(thisFeature);
+                geneFeature = thisFeature;
+                geneFeatureArtificial = false;
+                transcriptFeature = null;
+                lastFeature = null;
 
-                if (level == 0) {
-                    // encountered new top level feature
+            } else if (thisFeature.getType().equalsIgnoreCase("transcript")) {
+                // encountered a new transcript
+
+                if (geneFeature == null) {
+                    // encountered a transcript without a gene, generate a gene feature
 
                     prepareToFlushFeatures();
 
-                    lastFeature = thisFeature;
-                } else if (level > lastLevel) {
-                    // go deeper into the hierarchy as the current feature is a child of the last feature
-
-                    if (level - lastLevel > 1) {
-                        logger.error(String.format("Feature type <%s> is too deep to be a child of <%s>",
-                                thisFeature.getType(), lastFeature.getType()));
-                        logger.error("This means that the hierarchy is not properly defined in the GTF file");
-                        throw new TribbleException(String.format("Feature type <%s> is too deep to be a child of <%s>",
-                                thisFeature.getType(), lastFeature.getType()));
+                    HashMap<String, List<String>> geneAttributes = new HashMap<>();
+                    // copy gene attributes from the transcript to the gene attributes
+                    for (Map.Entry<String, List<String>> entry : thisFeature.getAttributes().entrySet()) {
+                        if (entry.getKey().toLowerCase().startsWith("gene")) {
+                            geneAttributes.put(entry.getKey(), entry.getValue());
+                        }
                     }
 
-                    lastFeature.addChild(thisFeature);
-                    thisFeature.addParent(lastFeature);
-                    lastFeature = thisFeature;
+                    geneFeature = new GtfFeatureImpl(
+                            new GtfBaseData(
+                                    thisFeature.getContig(),
+                                    thisFeature.getSource(),
+                                    "gene",
+                                    thisFeature.getStart(),
+                                    thisFeature.getEnd(),
+                                    thisFeature.getScore(),
+                                    thisFeature.getStrand(),
+                                    thisFeature.getFrame(),
+                                    geneAttributes
+                            )
+                    );
 
-                } else if (level < lastLevel) {
-                    // go up in the hierarchy as the current feature is above the last feature
-
-                    // number of steps up in the hierarchy
-                    int distance = lastLevel - level;
-                    // find the last feature on the same level
-                    GtfFeatureImpl coFeature = lastFeature;
-                    for (int i = 0; i < distance; i++) {
-                        coFeature = lastFeature.getParent();
-                    }
-
-                    coFeature.getParent().addChild(thisFeature);
-                    thisFeature.addParent(coFeature.getParent());
-                    coFeature.addCoFeature(thisFeature);
-                    lastFeature = thisFeature;
-                } else {
-                    // do not change level as the current feature is a sibling of the last feature
-
-                    lastFeature.getParent().addChild(thisFeature);
-                    thisFeature.addParent(lastFeature.getParent());
-
-                    lastFeature.addCoFeature(thisFeature);
-
-                    lastFeature = thisFeature;
+                    activeFeatures.add(geneFeature);
+                    geneFeatureArtificial = true;
                 }
+
+                if (geneFeatureArtificial) {
+                    // update the genomic coordinates of the gene feature (useful when the gene line was not encountered)
+                    if (thisFeature.getStart() < geneFeature.getStart()) {
+                        geneFeature.getBaseData().setStart(thisFeature.getStart());
+                    }
+                    if (thisFeature.getEnd() > geneFeature.getEnd()) {
+                        geneFeature.getBaseData().setEnd(thisFeature.getEnd());
+                    }
+                }
+
+                activeFeatures.add(thisFeature);
+
+                geneFeature.addChild(thisFeature);
+                thisFeature.addParent(geneFeature);
+
+                if (transcriptFeature != null) {
+                    transcriptFeature.addCoFeature(thisFeature);
+                }
+
+                transcriptFeature = thisFeature;
+                transcriptFeatureArtificial = false;
+                lastFeature = null;
+
+            } else {
+                // any other feature requires that both a gene and a transcript have been encountered
+
+                final String geneId = extractSingleAttribute(thisFeature.getAttribute(GtfConstants.GENE_ID_ATTRIBUTE_KEY));
+                final String transcriptId = extractSingleAttribute(thisFeature.getAttribute(GtfConstants.TRANSCRIPT_ID_ATTRIBUTE_KEY));
+
+                if (geneId == null) {
+                    throw new TribbleException(String.format("Missing gene_id attribute in GTF line <%s>", line));
+                }
+                if (transcriptId == null) {
+                    throw new TribbleException(String.format("Missing transcript_id attribute in GTF line <%s>", line));
+                }
+
+                if (geneFeature == null || !extractSingleAttribute(geneFeature.getAttribute(GtfConstants.GENE_ID_ATTRIBUTE_KEY))
+                        .equalsIgnoreCase(geneId)) {
+
+                    prepareToFlushFeatures();
+
+                    transcriptFeature = null;
+                    lastFeature = null;
+
+                    HashMap<String, List<String>> geneAttributes = new HashMap<>();
+                    // copy gene attributes from the transcript to the gene attributes
+                    for (Map.Entry<String, List<String>> entry : thisFeature.getAttributes().entrySet()) {
+                        if (entry.getKey().toLowerCase().startsWith("gene")) {
+                            geneAttributes.put(entry.getKey(), entry.getValue());
+                        }
+                    }
+
+                    geneFeature = new GtfFeatureImpl(
+                            new GtfBaseData(
+                                    thisFeature.getContig(),
+                                    thisFeature.getSource(),
+                                    "gene",
+                                    thisFeature.getStart(),
+                                    thisFeature.getEnd(),
+                                    thisFeature.getScore(),
+                                    thisFeature.getStrand(),
+                                    thisFeature.getFrame(),
+                                    geneAttributes
+                            )
+                    );
+
+                    activeFeatures.add(geneFeature);
+
+                    geneFeatureArtificial = true;
+                }
+
+                if (transcriptFeature == null || !extractSingleAttribute(transcriptFeature.getAttribute(GtfConstants.TRANSCRIPT_ID_ATTRIBUTE_KEY))
+                        .equalsIgnoreCase(transcriptId)) {
+
+                    HashMap<String, List<String>> transcriptAttributes = new HashMap<>();
+                    // copy gene attributes from the transcript to the gene attributes
+                    for (Map.Entry<String, List<String>> entry : thisFeature.getAttributes().entrySet()) {
+                        if (entry.getKey().toLowerCase().startsWith("transcript")) {
+                            transcriptAttributes.put(entry.getKey(), entry.getValue());
+                        }
+                    }
+
+                    GtfFeatureImpl newTranscriptFeature = new GtfFeatureImpl(
+                            new GtfBaseData(
+                                    thisFeature.getContig(),
+                                    thisFeature.getSource(),
+                                    "transcript",
+                                    thisFeature.getStart(),
+                                    thisFeature.getEnd(),
+                                    thisFeature.getScore(),
+                                    thisFeature.getStrand(),
+                                    thisFeature.getFrame(),
+                                    transcriptAttributes
+                            )
+                    );
+
+                    lastFeature = null;
+
+                    activeFeatures.add(newTranscriptFeature);
+
+                    geneFeature.addChild(newTranscriptFeature);
+                    newTranscriptFeature.addParent(geneFeature);
+
+                    if (transcriptFeature != null) {
+                        transcriptFeature.addCoFeature(newTranscriptFeature);
+                    }
+
+                    transcriptFeature = newTranscriptFeature;
+
+                    transcriptFeatureArtificial = true;
+                }
+
+                if (geneFeatureArtificial) {
+                    // update the genomic coordinates of the gene feature (useful when the gene line was not encountered)
+                    if (thisFeature.getStart() < geneFeature.getStart()) {
+                        geneFeature.getBaseData().setStart(thisFeature.getStart());
+                    }
+                    if (thisFeature.getEnd() > geneFeature.getEnd()) {
+                        geneFeature.getBaseData().setEnd(thisFeature.getEnd());
+                    }
+                }
+                if (transcriptFeatureArtificial) {
+                    // update the genomic coordinates of the transcript feature (useful when the gene line was not encountered)
+                    if (thisFeature.getStart() < transcriptFeature.getStart()) {
+                        transcriptFeature.getBaseData().setStart(thisFeature.getStart());
+                    }
+                    if (thisFeature.getEnd() > transcriptFeature.getEnd()) {
+                        transcriptFeature.getBaseData().setEnd(thisFeature.getEnd());
+                    }
+                }
+
+                activeFeatures.add(thisFeature);
+
+                transcriptFeature.addChild(thisFeature);
+                thisFeature.addParent(transcriptFeature);
+
+                if (lastFeature != null) {
+                    lastFeature.addCoFeature(thisFeature);
+                }
+
+                lastFeature = thisFeature;
             }
+
         } else if (decodeDepth == DecodeDepth.SHALLOW) {
             // submit every feature as soon as it is encountered without linking to parents / children / co-features
             prepareToFlushFeatures();
@@ -307,6 +425,15 @@ public class GtfCodec extends AbstractFeatureCodec<GtfFeature, LineIterator> {
                             final int start = Integer.parseInt(fields.get(START_INDEX));
                             final int end = Integer.parseInt(fields.get(END_INDEX));
                         } catch (NumberFormatException e) {
+                            return false;
+                        }
+
+                        if (!fields.get(ATTRIBUTES_INDEX).toLowerCase().contains("gene_id")) {
+                            logger.error("GTF file does not contain gene_id attribute");
+                            return false;
+                        }
+                        if (!fields.get(ATTRIBUTES_INDEX).toLowerCase().contains("transcript_id")) {
+                            logger.error("GTF file does not contain transcript_id attribute");
                             return false;
                         }
 

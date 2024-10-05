@@ -376,7 +376,7 @@ public class Gff3Codec extends AbstractFeatureCodec<Gff3Feature, LineIterator> {
         return decodedValues;
     }
 
-    static String extractSingleAttribute(final List<String> values) {
+    public static String extractSingleAttribute(final List<String> values) {
         if (values == null || values.isEmpty()) {
             return null;
         }

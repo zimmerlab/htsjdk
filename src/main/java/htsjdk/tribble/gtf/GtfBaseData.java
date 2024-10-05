@@ -12,8 +12,8 @@ public class GtfBaseData {
     private final String contig;
     private final String source;
     private final String type;
-    private final int start;
-    private final int end;
+    private int start;
+    private int end;
     private final double score;
     private final Strand strand;
     private final int frame;
@@ -87,8 +87,16 @@ public class GtfBaseData {
         return type;
     }
 
+    public void setStart(int start) {
+        this.start = start;
+    }
+
     public int getStart() {
         return start;
+    }
+
+    public void setEnd(int end) {
+        this.end = end;
     }
 
     public int getEnd() {

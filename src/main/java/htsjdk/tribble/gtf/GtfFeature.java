@@ -3,7 +3,9 @@ package htsjdk.tribble.gtf;
 import htsjdk.tribble.Feature;
 import htsjdk.tribble.annotation.Strand;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public interface GtfFeature extends Feature {
@@ -43,6 +45,10 @@ public interface GtfFeature extends Feature {
 
     default int getFrame() {
         return getBaseData().getFrame();
+    }
+
+    default Map<String, List<String>> getAttributes() {
+        return getBaseData().getAttributes();
     }
 
     default List<String> getAttribute(final String key) {
